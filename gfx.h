@@ -59,8 +59,13 @@ void WriteNtrImage(char *path, int numTiles, int bitDepth, int colsPerChunk, int
 void FreeImage( struct Image* image );
 bool CropImage( struct Image* img, int newWidth, int newHeight );
 void CreateImageChunks( struct Image* img, struct ChunkData* chunkData );
+
+bool PaletteSwapIndices( struct Palette* pal, unsigned int a, unsigned int b );
+unsigned char GetMostLikelyBackgroundColor( struct Image* img );
+void AdjustBackgroundColor( struct Image* img, unsigned char bg );
+
 void ReadGbaPalette( char* path, struct Palette* palette );
-void ReadNtrPalette(char *path, struct Palette *palette, int bitdepth, int palIndex);
+void ReadNtrPalette( char* path, struct Palette* palette, int bitdepth, int palIndex );
 void WriteGbaPalette(char *path, struct Palette *palette);
 void WriteNtrPalette(char *path, struct Palette *palette, bool ncpr, bool ir, int bitdepth, bool pad, int compNum, bool pcmp);
 void ReadNtrCell(char *path, struct JsonToCellOptions *options);

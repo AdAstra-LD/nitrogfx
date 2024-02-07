@@ -172,7 +172,15 @@ void ConvertPngToNtr(char *inputPath, char *outputPath, struct PngToNtrOptions *
         free( string );
     }
 
-    WriteNtrImage(outputPath, options->numTiles, image.bitDepth, options->colsPerChunk, options->rowsPerChunk,
+    if ( options->fixbg ) {
+        unsigned char bg = GetMostLikelyBackgroundColor( &image );
+        
+        if ( bg != 0 ) {
+            AdjustBackgroundColor( &image, bg );
+        }
+    }
+
+    WriteNtrImage( outputPath, options->numTiles, image.bitDepth, options->colsPerChunk, options->rowsPerChunk,
                   &image, !image.hasPalette, options->clobberSize, options->byteOrder, options->version101,
                   options->sopc, options->vramTransfer, options->scanMode, options->mappingType, key, options->wrongSize);
 
@@ -430,24 +438,26 @@ void HandlePngToGbaCommand(char *inputPath, char *outputPath, int argc, char **a
 
 void HandlePngToNtrCommand(char *inputPath, char *outputPath, int argc, char **argv)
 {
-    struct PngToNtrOptions options;
-    options.numTiles = 0;
-    options.bitDepth = 4;
-    options.colsPerChunk = 1;
-    options.rowsPerChunk = 1;
-    options.wrongSize = false;
-    options.clobberSize = false;
-    options.byteOrder = true;
-    options.version101 = false;
-    options.sopc = false;
-    options.scanMode = 0;
-    options.handleEmpty = false;
-    options.vramTransfer = false;
-    options.mappingType = 0;
-    options.cropX = 0;
-    options.cropY = 0;
-    options.chunkData.count = 0;
-    options.chunkData.chunks = NULL;
+    struct PngToNtrOptions options = {
+        .numTiles = 0,
+        .bitDepth = 4,
+        .colsPerChunk = 1,
+        .rowsPerChunk = 1,
+        .wrongSize = false,
+        .clobberSize = false,
+        .byteOrder = true,
+        .version101 = false,
+        .sopc = false,
+        .scanMode = 0,
+        .handleEmpty = false,
+        .vramTransfer = false,
+        .mappingType = 0,
+        .cropX = 0,
+        .cropY = 0,
+        .chunkData.count = 0,
+        .chunkData.chunks = NULL,
+        .fixbg = false
+    };
 
     for (int i = 3; i < argc; i++)
     {
@@ -632,6 +642,8 @@ void HandlePngToNtrCommand(char *inputPath, char *outputPath, int argc, char **a
 
                 i += (4+1);
             }
+        } else if ( strcmp( option, "-fixbg" ) == 0 ) {
+            options.fixbg = true;
         }
         else
         {
@@ -658,11 +670,13 @@ void HandlePngToNtrPaletteCommand(char *inputPath, char *outputPath, int argc, c
     bool nopad = false;
     int bitdepth = 0;
     int compNum = 0;
+    int cropX = 0;
+    int cropY = 0;
+    bool fixbg = false;
     bool pcmp = false;
 
-    for (int i = 3; i < argc; i++)
-    {
-        char *option = argv[i];
+    for (int i = 3; i < argc; i++) {
+        char* option = argv[i];
 
         if (strcmp(option, "-ncpr") == 0)
         {
@@ -706,14 +720,46 @@ void HandlePngToNtrPaletteCommand(char *inputPath, char *outputPath, int argc, c
         {
             pcmp = true;
         }
+        else if ( strcmp( option, "-cropx" ) == 0 ) {
+            if ( i + 1 >= argc )
+                FATAL_ERROR( "No x value following \"-cropx\".\n" );
+
+            i++;
+
+            if ( !ParseNumber( argv[i], NULL, 10, &cropX ) )
+                FATAL_ERROR( "Failed to parse cropx type.\n" );
+        } else if ( strcmp( option, "-cropy" ) == 0 ) {
+            if ( i + 1 >= argc )
+                FATAL_ERROR( "No x value following \"-cropy\".\n" );
+
+            i++;
+
+            if ( !ParseNumber( argv[i], NULL, 10, &cropY ) )
+                FATAL_ERROR( "Failed to parse cropY type.\n" );
+        } else if ( strcmp( option, "-fixbg" ) == 0 ) {
+            fixbg = true;
+        }
         else
         {
             FATAL_ERROR("Unrecognized option \"%s\".\n", option);
         }
     }
 
-    ReadPngPalette(inputPath, &palette);
-    WriteNtrPalette(outputPath, &palette, ncpr, ir, bitdepth, !nopad, compNum, pcmp);
+    ReadPngPalette( inputPath, &palette );
+
+    if ( fixbg == true ) {
+        struct Image image;
+        image.bitDepth = (bitdepth == 0 ? 4 : bitdepth);
+        ReadPng( inputPath, &image );
+        CropImage( &image, cropX, cropY );
+
+        unsigned char bg = GetMostLikelyBackgroundColor( &image );
+        if ( bg != 0 ) {
+            PaletteSwapIndices( &palette, 0, bg );
+        }
+    }
+
+    WriteNtrPalette( outputPath, &palette, ncpr, ir, bitdepth, !nopad, compNum, pcmp );
 }
 
 void HandleGbaToJascPaletteCommand(char *inputPath, char *outputPath, int argc UNUSED, char **argv UNUSED)

@@ -50,6 +50,7 @@ struct PngToNtrOptions {
     struct ChunkData chunkData;
 
     bool clobberSize;
+    bool fixbg;
     bool byteOrder;
     bool version101;
     bool sopc;

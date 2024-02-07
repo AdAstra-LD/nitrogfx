@@ -13,6 +13,7 @@ unsigned char *ReadWholeFileZeroPadded(char *path, int *size, int padAmount);
 void WriteWholeStringToFile(char *path, char *string);
 void WriteWholeFile(char *path, void *buffer, int bufferSize);
 void WriteGenericNtrHeader(FILE* fp, const char* magicNumber, uint32_t size, bool byteorder, bool version101, uint16_t sectionCount);
+unsigned char GetMostFrequentU8( unsigned char arr[], int len );
 
 // Unaligned IO
 static inline uint8_t ReadU8(const unsigned char *ptr, const size_t offset) {

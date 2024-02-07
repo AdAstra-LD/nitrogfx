@@ -867,6 +867,61 @@ void CreateImageChunks( struct Image* img, struct ChunkData* chunkData ) {
     img->pixels = newImg.pixels;
 }
 
+unsigned char GetMostLikelyBackgroundColor( struct Image* img ) {
+    unsigned char samples[8] = {
+        //4 corners
+        GetPixel( img, 0, 0 ),
+        GetPixel( img, img->width-1, 0 ),
+        GetPixel( img, 0, img->height-1 ),
+        GetPixel( img, img->width - 1, img->height - 1 ),
+
+        //Corner Midpoints
+        GetPixel( img, img->width / 2, 0 ),
+        GetPixel( img, 0, img->height/2 ),
+        GetPixel( img, img->width / 2, img->height-1 ),
+        GetPixel( img, img->width-1, img->height / 2 ),
+    };
+
+    unsigned char ret = GetMostFrequentU8( samples, 8 );
+    return ret;
+}
+
+bool PaletteSwapIndices( struct Palette* pal, unsigned int a, unsigned int b ) {
+    if ( pal == NULL ) {
+        return false;
+    }
+
+    if ( a > ( pal->numColors - 1 ) ) {
+        return false;
+    }
+
+    if ( b > ( pal->numColors - 1 ) ) {
+        return false;
+    }
+
+    struct Color temp = pal->colors[a];
+    pal->colors[a] = pal->colors[b];
+    pal->colors[b] = temp;
+
+    return true;
+}
+
+void AdjustBackgroundColor( struct Image* img, unsigned char bg ) {
+    //Ensure bg color is first in the palette
+    PaletteSwapIndices( &img->palette, 0, bg );
+
+    for ( int y = 0; y < img->height; y++ ) {
+        for ( int x = 0; x < img->width; x++ ) {
+            unsigned char px = GetPixel( img, x, y );
+
+            if ( px == 0 ) {
+                SetPixel( img, bg, x, y );
+            } else if ( px == bg ) {
+                SetPixel( img, 0, x, y );
+            } //else, do nothing.
+        }
+    }
+}
 
 void ReadGbaPalette(char *path, struct Palette *palette)
 {
