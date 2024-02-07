@@ -56,8 +56,10 @@ void WriteImage(char *path, int numTiles, int bitDepth, int colsPerChunk, int ro
 void WriteNtrImage(char *path, int numTiles, int bitDepth, int colsPerChunk, int rowsPerChunk, struct Image *image,
                    bool invertColors, bool clobberSize, bool byteOrder, bool version101, bool sopc, bool vram, uint32_t scanMode,
                    uint32_t mappingType, uint32_t key, bool wrongSize);
-void FreeImage(struct Image *image);
-void ReadGbaPalette(char *path, struct Palette *palette);
+void FreeImage( struct Image* image );
+bool CropImage( struct Image* img, int newWidth, int newHeight );
+void CreateImageChunks( struct Image* img, struct ChunkData* chunkData );
+void ReadGbaPalette( char* path, struct Palette* palette );
 void ReadNtrPalette(char *path, struct Palette *palette, int bitdepth, int palIndex);
 void WriteGbaPalette(char *path, struct Palette *palette);
 void WriteNtrPalette(char *path, struct Palette *palette, bool ncpr, bool ir, int bitdepth, bool pad, int compNum, bool pcmp);

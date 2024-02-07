@@ -16,6 +16,8 @@
 #include "huff.h"
 #include "json.h"
 
+#include <time.h>
+
 struct CommandHandler
 {
     const char *inputFileExtension;
@@ -143,7 +145,9 @@ void ConvertPngToNtr(char *inputPath, char *outputPath, struct PngToNtrOptions *
 
     image.bitDepth = options->bitDepth;
 
-    ReadPng(inputPath, &image);
+    ReadPng( inputPath, &image );
+    CropImage( &image, options->cropX, options->cropY );
+    CreateImageChunks( &image, &(options->chunkData) );
 
     uint32_t key = 0;
     if (options->scanMode)
@@ -151,13 +155,21 @@ void ConvertPngToNtr(char *inputPath, char *outputPath, struct PngToNtrOptions *
         char* string = malloc(strlen(inputPath) + 5);
         sprintf(string, "%s.key", inputPath);
         FILE *fp2 = fopen(string, "rb");
-        if (fp2 == NULL)
-            FATAL_ERROR("Failed to open key file for reading.\n");
-        size_t count = fread(&key, 4, 1, fp2);
-        if (count != 1)
-            FATAL_ERROR("Not a valid key file.\n");
-        fclose(fp2);
-        free(string);
+        if ( fp2 == NULL ) {
+            if ( options->useRandomKey ) {
+                srand( time( NULL ) );
+                key = rand();
+            } else {
+                FATAL_ERROR( "Failed to open key file for reading.\n" );
+            }
+        } else {
+            size_t count = fread( &key, 4, 1, fp2 );
+            if ( count != 1 )
+                FATAL_ERROR( "Not a valid key file.\n" );
+            fclose( fp2 );
+        }
+
+        free( string );
     }
 
     WriteNtrImage(outputPath, options->numTiles, image.bitDepth, options->colsPerChunk, options->rowsPerChunk,
@@ -432,6 +444,10 @@ void HandlePngToNtrCommand(char *inputPath, char *outputPath, int argc, char **a
     options.handleEmpty = false;
     options.vramTransfer = false;
     options.mappingType = 0;
+    options.cropX = 0;
+    options.cropY = 0;
+    options.chunkData.count = 0;
+    options.chunkData.chunks = NULL;
 
     for (int i = 3; i < argc; i++)
     {
@@ -539,6 +555,83 @@ void HandlePngToNtrCommand(char *inputPath, char *outputPath, int argc, char **a
 
             if (options.mappingType != 0 && options.mappingType != 32 && options.mappingType != 64 && options.mappingType != 128 && options.mappingType != 256)
                 FATAL_ERROR("bitdepth must be one of the following: 0, 32, 64, 128, or 256\n");
+        }
+        else if ( strcmp( option, "-randomkey" ) == 0 ) {
+            options.useRandomKey = true;
+        }
+        else if ( strcmp( option, "-cropx" ) == 0 ) {
+            if ( i + 1 >= argc )
+                FATAL_ERROR( "No x value following \"-cropx\".\n" );
+
+            i++;
+
+            if ( !ParseNumber( argv[i], NULL, 10, &options.cropX ) )
+                FATAL_ERROR( "Failed to parse cropx type.\n" );
+        }
+        else if ( strcmp( option, "-cropy" ) == 0 ) {
+            if ( i + 1 >= argc )
+                FATAL_ERROR( "No x value following \"-cropy\".\n" );
+
+            i++;
+
+            if ( !ParseNumber( argv[i], NULL, 10, &options.cropY ) )
+                FATAL_ERROR( "Failed to parse cropY type.\n" );
+        } else if ( strcmp( option, "-chunks" ) == 0 ) {
+            if ( i + 1 >= argc ) {
+                FATAL_ERROR( "No counter value following \"-chunks\".\n" );
+            }
+            i++;
+
+
+            int count;
+            if ( !ParseNumber( argv[i], NULL, 10, &count ) ) {
+                FATAL_ERROR( "Failed to parse chunk count.\n" );
+            }
+
+            if ( count <= 0 ) {
+                FATAL_ERROR( "Chunk number must be positive and non-zero.\n" );
+            }
+            if ( count > 16 ) {
+                printf( "Clamped chunk number to 16" );
+                count = 16;
+            }
+
+            if ( i + ( (4+1) * count ) >= argc ) {
+                FATAL_ERROR( "Not enough arguments to specify %d chunks. Usage: -chk px py sx sy", count );
+            }
+            i++;
+
+            options.chunkData.count = count;
+            options.chunkData.chunks = malloc( count * sizeof( union Rect ) );
+
+            printf( "Parsing %d chunks.\n", count );
+
+
+            for ( int j = 0; j < count; j++ ) {
+                int base = i;
+                //printf( "base %d  %s\n", base, argv[base] );
+
+                if ( strcmp( argv[base + 0], "-chk" ) != 0 ) {
+                    FATAL_ERROR( "Expected chunk start section \"-chk\".\n" );
+                }
+
+                for ( int p = 0; p < 4; p++ ) {
+                    int num;
+                    if ( !ParseNumber( argv[base + 1 + p], NULL, 10, &num ) ) {
+                        FATAL_ERROR( "Failed to parse chunk dimensions.\n" );
+                    }
+
+                    if ( num % 8 != 0 ) {
+                        FATAL_ERROR( "Chunk dimensions must be multiples of 8.\n" );
+                    }
+
+                    options.chunkData.chunks[j].arr[p] = num;
+
+                    //printf( "Rect %d: param %d =  %d\n", j, p, num );
+                }
+
+                i += (4+1);
+            }
         }
         else
         {

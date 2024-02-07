@@ -674,6 +674,200 @@ void FreeImage(struct Image *image)
     image->pixels = NULL;
 }
 
+static unsigned char GetPixel( struct Image* img, int x, int y ) {
+    if ( img->bitDepth == 4 ) {
+        int i = y * img->width / 2 + x / 2;
+
+        if ( x % 2 == 0 ) {
+            return ( img->pixels[i] & 0x0F );
+        } else {
+            return ( img->pixels[i] >> 4 );
+        }
+    } else if ( img->bitDepth == 8 ) {
+        int i = y * img->width + x;
+        return img->pixels[i];
+    }
+
+    return -1;
+}
+
+static void SetPixelLinear( struct Image* img, unsigned char p, int pos ) {
+    if ( img->bitDepth == 4 ) {
+        if ( pos % 2 == 0 ) {
+            img->pixels[pos/2] = ( img->pixels[pos/2] & 0xF0 ) | ( p & 0x0F );
+        } else {
+            img->pixels[pos/2] = ( img->pixels[pos/2] & 0x0F ) | ( p << 4 );
+        }
+    } else if ( img->bitDepth == 8 ) {
+        img->pixels[pos] = p;
+    }
+}
+
+static void SetPixel( struct Image* img, unsigned char p, int x, int y ) {
+    int pos = y * img->width + x;
+    SetPixelLinear( img, p, pos );
+}
+
+static struct Image* ExtractNitroBlock( struct Image* src, int x, int y ) {
+    if ( src == NULL ) {
+        FATAL_ERROR( "Null source image!" );
+    }
+
+    // Create a new image
+    struct Image* newImg = malloc( sizeof( struct Image ) );
+    newImg->bitDepth = src->bitDepth;
+    newImg->width = 8;
+    newImg->height = 8;
+    newImg->pixels = malloc( ( newImg->width * newImg->height ) / ( 8 / newImg->bitDepth ) );
+
+    if ( newImg->pixels == NULL ) {
+        FATAL_ERROR( "Could not allocate %dbpp image data for %d x %d px.", newImg->bitDepth, newImg->width, newImg->height );
+        return NULL;
+    }
+
+    // Calculate the top-left corner of the closest 8x8 block
+    int blockX = ( x / NITROBLOCK_SIZE ) * NITROBLOCK_SIZE;
+    int blockY = ( y / NITROBLOCK_SIZE ) * NITROBLOCK_SIZE;
+
+    // Copy the pixels from the source image to the new image
+    for ( int j = 0; j < NITROBLOCK_SIZE; j++ ) {
+        for ( int i = 0; i < NITROBLOCK_SIZE; i++ ) {
+            unsigned char pixel = GetPixel( src, blockX + i, blockY + j );
+            SetPixel( newImg, pixel, i, j );
+
+            //printf( "Transferring %d %d  px %d  to  new img %d %d\n", blockX + i, blockY + j, pixel, i, j );
+        }
+        //puts( "" );
+    }
+
+    return newImg;
+}
+
+static void transferBlockToImage( struct Image* outputImg, struct Image* block, int blockIdx ) {
+    if ( block->width != NITROBLOCK_SIZE || block->height != NITROBLOCK_SIZE) {
+        FATAL_ERROR( "Not a valid block! Expected dimension: %d x %d", NITROBLOCK_SIZE, NITROBLOCK_SIZE );
+    }
+
+    // Calculate the pixel coordinates in the output image
+    int pX = ( blockIdx * NITROBLOCK_SIZE ) % outputImg->width;
+    int pY = ( ( blockIdx * NITROBLOCK_SIZE ) / outputImg->width ) * NITROBLOCK_SIZE;
+
+    //printf( "Begin transfer of block %d --> %d %d\n", blockIdx, pX, pY);
+
+    // Transfer the pixels from the block to the output image
+    for ( int j = 0; j < NITROBLOCK_SIZE; j++ ) {
+        for ( int i = 0; i < NITROBLOCK_SIZE; i++ ) {
+            unsigned char pixel = GetPixel( block, i, j );
+            SetPixel( outputImg, pixel, pX + i, pY + j );
+
+            //printf( "Copying block %d %d  px %d  to  img %d %d\n", i, j, pixel, pX + i, pY + j );
+        }
+        //puts( "" );
+    }
+}
+
+
+
+bool CropImage( struct Image* img, int newWidth, int newHeight ) {
+    if ( img == NULL ) {
+        FATAL_ERROR( "Null image pointer when cropping!" );
+    }
+
+    if ( newWidth > 0 ) {
+        if ( newWidth > img->width ) {
+            printf( "Can't crop image width to %d. Image x is %d. Ignoring.", newWidth, img->width );
+        }
+    } else {
+        return false;
+    }
+
+    if ( newHeight > 0 ) {
+        if ( newHeight > img->height ) {
+            printf( "Can't crop image height to %d. Image y is %d. Ignoring.", newHeight, img->height );
+        }
+    } else {
+        return false;
+    }
+
+
+    // Copy the pixels from the original image to the new image
+    for ( int y = 0; y < newHeight; y++ ) {
+        for ( int x = 0; x < newWidth; x++ ) {
+            unsigned char pixel = GetPixel( img, x, y );
+            SetPixelLinear( img, pixel, y * newWidth + x );
+        }
+    }
+
+
+    img->width = newWidth;
+    img->height = newHeight;
+    img->pixels = realloc( img->pixels, newWidth * newHeight * img->bitDepth / 8 );
+
+    return true;
+}
+
+void CreateImageChunks( struct Image* img, struct ChunkData* chunkData ) {
+    if ( img == NULL ) {
+        FATAL_ERROR( "Null image pointer when creating image chunks!" );
+    }
+
+    if ( chunkData == NULL ) {
+        return;
+    }
+
+    if ( chunkData->count == 0 ) {
+        return;
+    }
+
+    if ( img->bitDepth != 8 && img->bitDepth != 4 ) {
+        FATAL_ERROR( "Unsupported bitDepth %d for image chunk creation!", img->bitDepth );
+    }
+
+    for ( int i = 0; i < chunkData->count; i++ ) {
+        struct RectGeom* rect = &( chunkData->chunks[i].geom );
+
+        if ( rect->pX + rect->sX > img->width ) {
+            FATAL_ERROR( "Chunk %d (px %d py %d sx %d sy %d) exceeds image width (%d).", i, rect->pX, rect->pY, rect->sX, rect->sY, img->width );
+        }
+
+        if ( rect->pY + rect->sY > img->height ) {
+            FATAL_ERROR( "Chunk %d (px %d py %d sx %d sy %d) exceeds image height (%d).", i, rect->pX, rect->pY, rect->sX, rect->sY, img->height );
+        }
+    }
+
+    struct Image newImg;
+    newImg.bitDepth = img->bitDepth;
+    newImg.width = img->width;
+    newImg.height = img->height;
+
+    const int size = ( img->width * img->height ) / ( 8 / img->bitDepth );
+    newImg.pixels = malloc( size );
+
+    if ( newImg.pixels == NULL ) {
+        FATAL_ERROR( "Could not allocate %dbpp image data for %d x %d px.", img->bitDepth, img->width, img->height);
+    }
+
+    memset( newImg.pixels, 0, size );
+
+    int blocksSoFar = 0;
+    for ( int i = 0; i < chunkData->count; i++ ) {
+        struct RectGeom* current = &( chunkData->chunks[i].geom );
+
+        for ( int y = 0; y < current->sY; y += NITROBLOCK_SIZE ) {
+            for ( int x = 0; x < current->sX; x += NITROBLOCK_SIZE ) {
+                struct Image* block = ExtractNitroBlock( img, current->pX + x, current->pY + y );
+                transferBlockToImage( &newImg, block, blocksSoFar );
+                free( block );
+                blocksSoFar++;
+            }
+        }
+    }
+
+    FreeImage( img );
+    img->pixels = newImg.pixels;
+}
+
+
 void ReadGbaPalette(char *path, struct Palette *palette)
 {
     int fileSize;

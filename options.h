@@ -23,16 +23,38 @@ struct PngToGbaOptions {
     int rowsPerChunk;
 };
 
+#define NITROBLOCK_SIZE (8)
+union Rect {
+    struct RectGeom {
+        uint16_t pX;
+        uint16_t pY;
+        uint16_t sX;
+        uint16_t sY;
+    } geom;
+
+    uint16_t arr[4];
+};
+
+struct ChunkData {
+    uint16_t count;
+    union Rect* chunks;
+};
+
 struct PngToNtrOptions {
     int numTiles;
     int bitDepth;
     int colsPerChunk;
     int rowsPerChunk;
+    int cropX;
+    int cropY;
+    struct ChunkData chunkData;
+
     bool clobberSize;
     bool byteOrder;
     bool version101;
     bool sopc;
     uint32_t scanMode;
+    bool useRandomKey;
     bool wrongSize;
     bool handleEmpty;
     bool vramTransfer;
